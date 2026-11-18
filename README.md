@@ -1,4 +1,18 @@
-# RiotStalker
+# RiotWatcher 1.1.0
+
+Windows desktop viewer for Riot friend activity. It shows game phases and modes, supports friend pins and sound alerts, and includes a demo mode.
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\start.cmd
+```
+
+To use a different Riot account from the one in the desktop client, choose **계정 → 별도 계정 로그인**. This experimental mode uses a separate session and requires Microsoft Edge WebView2 Runtime. See the [separate account guide](SEPARATE_ACCOUNT.md).
+
+To build the Windows executable, install PyInstaller in `.venv` and run `.\.venv\Scripts\python.exe -m PyInstaller --noconfirm RiotWatcher.spec`. The executable is written to `dist/`.
+
+## RiotStalker console mode
 
 Watches your Riot friends list and tracks what your friends are up to in real time — when they come online, what game they're in, round scores, map, party size, queue state, and more. Prints to console, optionally sends a push notification to your phone, and logs everything with timestamps.
 
@@ -116,7 +130,7 @@ Dumps raw presence payloads to `riotstalker_debug.log` when someone shows up as 
 
 ## Disclaimer
 
-This only talks to `127.0.0.1` — the same local API the Riot client itself uses. No external API calls, no key required. Use at your own risk and in line with Riot's ToS.
+The default friend lookup uses the Riot Client API on `127.0.0.1`. Separate account mode uses Riot's login and chat servers. Neither mode requires a Riot developer API key.
 
 ## License
 

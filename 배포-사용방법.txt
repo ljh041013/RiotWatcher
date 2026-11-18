@@ -1,0 +1,24 @@
+RiotWatcher 1.1.0 · Windows 64비트
+
+실행
+1. ZIP을 받았다면 압축을 풉니다.
+2. RiotWatcher.exe를 실행합니다. Python 설치는 필요하지 않습니다.
+3. Riot Client 또는 게임에 로그인하면 친구 목록을 불러옵니다.
+
+클라이언트와 다른 계정을 쓰려면 '계정' → '별도 계정 로그인'을 선택하세요.
+별도 로그인 창에는 Microsoft Edge WebView2 Runtime이 필요합니다.
+
+친구 목록 없이 UI를 보려면 상단의 '데모 보기'를 누르세요.
+
+설정 저장
+실행 파일과 같은 폴더에 설정 파일이 생성됩니다.
+고정 친구와 알림 대상은 저장됩니다. Space 자동 입력은 실행할 때마다 직접 켭니다.
+다운로드 폴더 등 쓰기 가능한 폴더에 두고 실행하세요.
+
+기존 설정 가져오기
+기존 프로그램 폴더의 settings.json, window.json, pins.json, alerts.json을
+RiotWatcher.exe와 같은 폴더로 복사하면 됩니다. 필수는 아닙니다.
+
+이 프로그램은 라이엇 게임즈의 공식 프로그램이 아닙니다.
+원본 프로젝트: https://github.com/ch4rlesexe/RiotWatcher
+라이선스: 동봉된 LICENSE 참고

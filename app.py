@@ -126,7 +126,7 @@ def _ssl_no_verify():
     return ctx
 
 
-def fetch_presences(port, password):
+def fetch_presences(port, password, session=None):
     """
     GET /chat/v4/presences (Riot Client API).
     Returns only online friends; each has name, game_name, game_tag, product, state, etc.
@@ -137,7 +137,7 @@ def fetch_presences(port, password):
     headers = {"Authorization": _auth_header(password)}
 
     if HAS_REQUESTS:
-        r = requests.get(url, headers=headers, verify=False, timeout=5)
+        r = (session or requests).get(url, headers=headers, verify=False, timeout=5)
         r.raise_for_status()
         data = r.json()
         raw = (data.get("presences") or []) if isinstance(data, dict) else []
@@ -147,9 +147,11 @@ def fetch_presences(port, password):
             data = json.loads(resp.read().decode())
             raw = (data.get("presences") or []) if isinstance(data, dict) else []
 
-    # API can return multiple presences per user (e.g. one "valorant", one "riot_client"); keep the game one
+    # Prefer an active desktop presence over a mobile companion presence.
     by_puuid = {}
     for p in raw:
+        if _presence_state(p) in ("offline", "unavailable"):
+            continue
         puuid = p.get("puuid")
         if not puuid:
             continue
@@ -157,6 +159,14 @@ def fetch_presences(port, password):
         existing = by_puuid.get(puuid)
         if not existing:
             by_puuid[puuid] = p
+            continue
+        if is_mobile_presence(p) != is_mobile_presence(existing):
+            if not is_mobile_presence(p):
+                by_puuid[puuid] = p
+            continue
+        if is_mobile_presence(p) and is_mobile_presence(existing):
+            if prod == 'ritoplus':
+                by_puuid[puuid] = p
             continue
         existing_prod = (existing.get("product") or existing.get("Product") or "").strip().lower()
         if prod in ("valorant", "league_of_legends") and existing_prod not in ("valorant", "league_of_legends"):
@@ -168,13 +178,13 @@ def fetch_presences(port, password):
     return list(by_puuid.values())
 
 
-def fetch_friends(port, password):
+def fetch_friends(port, password, session=None):
     """GET /lol-chat/v1/friends (LCU) and return list of friend objects."""
     url = f"https://127.0.0.1:{port}/lol-chat/v1/friends"
     headers = {"Authorization": _auth_header(password)}
 
     if HAS_REQUESTS:
-        r = requests.get(url, headers=headers, verify=False, timeout=5)
+        r = (session or requests).get(url, headers=headers, verify=False, timeout=5)
         r.raise_for_status()
         return r.json()
 
@@ -185,13 +195,17 @@ def fetch_friends(port, password):
 
 def is_online(friend):
     """True if friend is considered 'online' (available or in-game)."""
-    availability = (friend.get("availability") or "offline").lower()
-    if availability != "offline":
-        return True
-    # In-game (e.g. League of Legends) shows as gameStatus or similar
-    if friend.get("gameStatus") or friend.get("lol", {}).get("gameStatus"):
-        return True
-    return False
+    availability = (friend.get("availability") or "offline").strip().lower()
+    return availability not in ("offline", "unavailable")
+
+
+def _presence_state(presence):
+    return str(presence.get("state") or presence.get("availability") or "chat").strip().lower()
+
+
+def is_mobile_presence(presence):
+    product = str(presence.get('product') or presence.get('Product') or presence.get('gameProduct') or '').strip().lower()
+    return product == 'ritoplus' or _presence_state(presence) == 'mobile'
 
 
 def get_display_name(friend):
@@ -231,6 +245,18 @@ def presence_to_status(presence):
     Returns status for a presence: same style as League ("Playing League of Legends") but for Valorant ("Playing Valorant" / "In Valorant (menu)" etc.).
     When we're on the presence API and product isn't League, we treat them as Valorant so it "does it just like league but for val".
     """
+    state = _presence_state(presence)
+    if state in ("offline", "unavailable") or is_mobile_presence(presence):
+        mobile_status = {'chat': 'Mobile (online)', 'away': 'Mobile (away)', 'mobile': 'Mobile (away)', 'dnd': 'Mobile (busy)'}.get(state, 'Mobile (not confirmed playing)')
+        return {
+            "status": "Offline" if state in ('offline', 'unavailable') else mobile_status,
+            "product": presence.get("product"),
+            "state": state,
+            "summary": None,
+            "in_game": False,
+            "valorant": None,
+            "league": None,
+        }
     product = (presence.get("product") or presence.get("Product") or presence.get("gameProduct") or "").strip().lower()
     resource = (presence.get("resource") or "").lower()
     patchline = (presence.get("patchline") or "").lower()
@@ -293,7 +319,9 @@ def presence_to_status(presence):
     )
     session_state = str(session_state).upper()
     party_state = _priv.get("partyState") or (_priv.get("partyPresenceData") or {}).get("partyState") or ""
-    queue_id = _priv.get("queueId") or (_priv.get("matchPresenceData") or {}).get("queueId") or ""
+    queue_id = (_priv.get("queueId")
+                or (_priv.get("matchPresenceData") or {}).get("queueId")
+                or (_priv.get("partyPresenceData") or {}).get("queueId") or "")
 
     summary_says_playing = "playing" in summary and any(c.isdigit() for c in summary_raw)
     in_game = session_state == "INGAME" or summary_says_playing
@@ -305,15 +333,15 @@ def presence_to_status(presence):
     party_data = _priv.get("partyPresenceData") or {}
     match_data = _priv.get("matchPresenceData") or {}
     player_data = _priv.get("playerPresenceData") or {}
-    score_ally = _priv.get("partyOwnerMatchScoreAllyTeam") or party_data.get("partyOwnerMatchScoreAllyTeam")
-    score_enemy = _priv.get("partyOwnerMatchScoreEnemyTeam") or party_data.get("partyOwnerMatchScoreEnemyTeam")
+    score_ally = _priv.get("partyOwnerMatchScoreAllyTeam", party_data.get("partyOwnerMatchScoreAllyTeam"))
+    score_enemy = _priv.get("partyOwnerMatchScoreEnemyTeam", party_data.get("partyOwnerMatchScoreEnemyTeam"))
     party_size = _priv.get("partySize") or party_data.get("partySize")
     max_party_size = _priv.get("maxPartySize") or party_data.get("maxPartySize")
-    match_map = match_data.get("matchMap") or ""
-    is_party_owner = party_data.get("isPartyOwner")
+    match_map = match_data.get("matchMap") or _priv.get("matchMap") or party_data.get("partyOwnerMatchMap") or ""
+    is_party_owner = party_data.get("isPartyOwner", _priv.get("isPartyOwner"))
     party_state_val = party_data.get("partyState") or party_state
-    competitive_tier = player_data.get("competitiveTier")
-    account_level = player_data.get("accountLevel")
+    competitive_tier = player_data.get("competitiveTier", _priv.get("competitiveTier"))
+    account_level = player_data.get("accountLevel", _priv.get("accountLevel"))
 
     valorant_detail = {
         "round_score": f"{score_ally or 0}-{score_enemy or 0}" if (score_ally is not None or score_enemy is not None) else None,
@@ -774,7 +802,7 @@ if __name__ == "__main__":
 
     # --- Phone push when they log on: set ONE of these (or leave both None for no push) ---
     # Option A: ntfy (easiest, no account). Install "ntfy" app, subscribe to the topic below.
-    NOTIFY_NTFY_TOPIC = "your-secret-topic"  # change to a unique, hard-to-guess topic; subscribe to it in the ntfy app
+    NOTIFY_NTFY_TOPIC = None  # Phone notifications disabled for this installation.
     # Option B: Pushbullet. Get key from https://www.pushbullet.com/#settings
     NOTIFY_PUSHBULLET_KEY = None  # e.g. "o.xxxxxxxxxxxxxxxxxxxxxxxx"
 
@@ -830,7 +858,7 @@ if __name__ == "__main__":
         on_online=on_presence,
         on_status_change=on_change,
         on_offline=on_offline,
-        watch_names=["FriendName"],  # replace with the Riot/Valorant display name(s) you want to watch (or None for all friends)
+        watch_names=None,  # Watch all friends; set a list of names to filter.
         poll_interval=3,
         use_websocket=True,
         log_file=_LOG_PATH,

@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.log
+settings.json
+settings.json.tmp
+window.json
+window.json.tmp
+pins.json
+pins.json.tmp
+alerts.json
+alerts.json.tmp
+build/
+dist/
+release/
